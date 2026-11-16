@@ -2,8 +2,8 @@ package com.example.product_service.services;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.*;
-@RestController
 @CrossOrigin(origins = {"http://127.0.0.1:5500", "http://localhost:5500"})
+@RestController
 @RequestMapping("/api/products")
 public class ProductController {
     @GetMapping
