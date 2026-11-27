@@ -23,8 +23,6 @@ public class OrderController {
         this.orderService = orderService;
     }
 
-    // ==================== CRUD ====================
-
     @GetMapping
     public List<OrderResponse> getOrders() {
         return orderService.getAll();
@@ -54,8 +52,6 @@ public class OrderController {
         orderService.delete(id);
         return ResponseEntity.ok(Map.of("message", "Đã xóa đơn nhập hàng ID = " + id));
     }
-
-    // ==================== NGHIỆP VỤ CƠ BẢN ====================
 
     @GetMapping("/product/{id}")
     public ProductResponse getProduct(@PathVariable Integer id) {

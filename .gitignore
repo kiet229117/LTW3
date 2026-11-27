@@ -1,6 +1,7 @@
 target/
 node_modules/
 dist/
+order-service/data/
 .idea/
 .vscode/
 .env

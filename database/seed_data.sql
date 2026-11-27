@@ -1,14 +1,14 @@
 -- =====================================================================
 -- LAB 03 - DỮ LIỆU MẪU PHỤC VỤ NGHIỆP VỤ (XAMPP MySQL)
--- Database: ltw3_kiet
+-- Database: product_db
 -- Các bảng: categories, brands, products, product_images
 -- =====================================================================
 
-CREATE DATABASE IF NOT EXISTS ltw3_kiet
+CREATE DATABASE IF NOT EXISTS product_db
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 
-USE ltw3_kiet;
+USE product_db;
 
 -- 1. Bảng categories (5 bản ghi)
 INSERT INTO categories (id, name, description) VALUES

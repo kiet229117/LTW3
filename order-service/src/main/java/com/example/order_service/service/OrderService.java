@@ -15,7 +15,6 @@ import com.example.order_service.repository.OrderRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -25,7 +24,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @Service
 public class OrderService {
@@ -35,28 +33,24 @@ public class OrderService {
     private final RestClient userClient;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
-    private final JdbcTemplate jdbcTemplate;
 
     public OrderService(ProductClient productClient,
                         RestClient.Builder builder,
                         @Value("${services.notification.url}") String notificationUrl,
                         @Value("${services.user.url}") String userUrl,
                         OrderRepository orderRepository,
-                        OrderItemRepository orderItemRepository,
-                        JdbcTemplate jdbcTemplate) {
+                        OrderItemRepository orderItemRepository) {
         this.productClient = productClient;
         this.notificationClient = builder.baseUrl(notificationUrl).build();
         this.userClient = builder.baseUrl(userUrl).build();
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
-        this.jdbcTemplate = jdbcTemplate;
     }
 
     @PostConstruct
     public void initSeedData() {
         try {
             if (orderRepository.count() == 0) {
-                jdbcTemplate.execute("ALTER TABLE orders AUTO_INCREMENT = 101");
                 PurchaseOrder o1 = orderRepository.save(new PurchaseOrder(
                         "PO-2026-101",
                         "Công ty TNHH Thiết bị Số Hoàng Gia",
@@ -140,31 +134,26 @@ public class OrderService {
         List<OrderItem> orderItems = new ArrayList<>();
 
         for (OrderItemRequest itemReq : request.items()) {
-            // Gọi Product Service để kiểm tra sản phẩm và lấy đơn giá
             ProductResponse product = productClient.getById(itemReq.productId());
             if (product == null || product.price() == null) {
                 throw new ResourceNotFoundException("Không tìm thấy thông tin sản phẩm: " + itemReq.productId());
             }
 
-            // Tính thành tiền từng sản phẩm
             BigDecimal amount = product.price()
                     .multiply(BigDecimal.valueOf(itemReq.quantity()));
 
-            // Cộng dồn tổng tiền đơn hàng
             totalAmount = totalAmount.add(amount);
             totalQuantity += itemReq.quantity();
 
-            OrderItem orderItem = new OrderItem(
+            orderItems.add(new OrderItem(
                     product.id(),
                     product.name(),
                     itemReq.quantity(),
                     product.price().intValue(),
                     order
-            );
-            orderItems.add(orderItem);
+            ));
         }
 
-        // Cập nhật thông tin tổng hợp đơn hàng
         OrderItem firstItem = orderItems.get(0);
         order.setProductId(firstItem.getProductId());
         order.setQuantity(totalQuantity);
@@ -172,14 +161,12 @@ public class OrderService {
         order.setTotalAmount(totalAmount.intValue());
         order.setItems(orderItems);
 
-        // Lưu Order và OrderItem vào CSDL
         PurchaseOrder saved = orderRepository.save(order);
         if (saved.getOrderCode() == null || saved.getOrderCode().isBlank()) {
-            saved.setOrderCode("PO-2026-" + saved.getId());
+            saved.setOrderCode("PO-2026-" + (100 + saved.getId()));
             saved = orderRepository.save(saved);
         }
 
-        // Gửi thông báo đến Notification Service (không làm gián đoạn nghiệp vụ nếu service chưa bật)
         try {
             notificationClient.post()
                     .uri("/api/notifications/send")
@@ -293,13 +280,5 @@ public class OrderService {
         order.setStatus("CANCELLED");
         order.setCancelledAt(LocalDateTime.now().toString());
         return ResponseEntity.ok(toResponse(orderRepository.save(order)));
-    }
-
-    public List<OrderItem> getAllOrderItems() {
-        return orderItemRepository.findAll();
-    }
-
-    public List<OrderItem> getOrderItemsByOrderId(int orderId) {
-        return orderItemRepository.findByOrderId(orderId);
     }
 }
