@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
-@CrossOrigin(origins = { "http://127.0.0.1:5500", "http://localhost:5500", "http://localhost:5173", "http://localhost:8081", "http://localhost:8083", "http://localhost:8084", "http://localhost:8085", "http://localhost:8086" })
 @RestController
 @RequestMapping("/api/orders")
 public class OrderController {
