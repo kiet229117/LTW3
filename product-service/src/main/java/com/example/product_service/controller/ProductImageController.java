@@ -1,15 +1,19 @@
 package com.example.product_service.controller;
 
+import com.example.product_service.dto.ProductImageRequest;
+import com.example.product_service.dto.ProductImageResponse;
 import com.example.product_service.entity.Product;
 import com.example.product_service.entity.ProductImage;
+import com.example.product_service.exception.ResourceNotFoundException;
 import com.example.product_service.repository.ProductImageRepository;
 import com.example.product_service.repository.ProductRepository;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/product-images")
@@ -23,38 +27,43 @@ public class ProductImageController {
         this.productRepository = productRepository;
     }
 
+    private ProductImageResponse toResponse(ProductImage img) {
+        return new ProductImageResponse(
+                img.getId(),
+                img.getImageUrl(),
+                img.getProduct() != null ? img.getProduct().getId() : null
+        );
+    }
+
     @GetMapping
-    public List<ProductImage> getAll() {
-        return imageRepository.findAll();
+    public List<ProductImageResponse> getAll() {
+        return imageRepository.findAll().stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ProductImage> getById(@PathVariable int id) {
-        return imageRepository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public ProductImageResponse getById(@PathVariable Integer id) {
+        ProductImage img = imageRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hình ảnh: " + id));
+        return toResponse(img);
     }
 
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody Map<String, Object> payload) {
-        String imageUrl = (String) payload.get("imageUrl");
-        if (imageUrl == null || imageUrl.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "imageUrl không được để trống"));
-        }
-        int productId = ((Number) payload.getOrDefault("productId", 1)).intValue();
-        Optional<Product> productOpt = productRepository.findById(productId);
-        if (productOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy sản phẩm ID = " + productId));
-        }
+    public ResponseEntity<ProductImageResponse> create(@Valid @RequestBody ProductImageRequest request) {
+        Product product = productRepository.findById(request.productId())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm: " + request.productId()));
 
-        ProductImage saved = imageRepository.save(new ProductImage(imageUrl, productOpt.get()));
-        return ResponseEntity.ok(saved);
+        ProductImage saved = imageRepository.save(new ProductImage(request.imageUrl().trim(), product));
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(toResponse(saved));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> delete(@PathVariable int id) {
+    public ResponseEntity<Map<String, Object>> delete(@PathVariable Integer id) {
         if (!imageRepository.existsById(id)) {
-            return ResponseEntity.notFound().build();
+            throw new ResourceNotFoundException("Không tìm thấy hình ảnh: " + id);
         }
         imageRepository.deleteById(id);
         return ResponseEntity.ok(Map.of("message", "Đã xóa hình ảnh sản phẩm ID = " + id));

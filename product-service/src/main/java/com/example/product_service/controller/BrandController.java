@@ -1,7 +1,10 @@
 package com.example.product_service.controller;
 
-import com.example.product_service.entity.Brand;
+import com.example.product_service.dto.BrandRequest;
+import com.example.product_service.dto.BrandResponse;
 import com.example.product_service.service.BrandService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,34 +22,32 @@ public class BrandController {
     }
 
     @GetMapping
-    public List<Brand> getAll() {
+    public List<BrandResponse> getAll() {
         return service.getAll();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Brand> getById(@PathVariable int id) {
-        return service.getById(id)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public BrandResponse getById(@PathVariable Integer id) {
+        return service.getById(id);
     }
 
     @PostMapping
-    public ResponseEntity<Brand> create(@RequestBody Brand brand) {
-        return ResponseEntity.ok(service.create(brand));
+    public ResponseEntity<BrandResponse> create(@Valid @RequestBody BrandRequest request) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(service.create(request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Brand> update(@PathVariable int id, @RequestBody Brand brand) {
-        return service.update(id, brand)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public BrandResponse update(
+            @PathVariable Integer id,
+            @Valid @RequestBody BrandRequest request) {
+        return service.update(id, request);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> delete(@PathVariable int id) {
-        if (!service.delete(id)) {
-            return ResponseEntity.notFound().build();
-        }
+    public ResponseEntity<Map<String, Object>> delete(@PathVariable Integer id) {
+        service.delete(id);
         return ResponseEntity.ok(Map.of("message", "Đã xóa thương hiệu ID = " + id));
     }
 }

@@ -2,6 +2,7 @@ package com.example.order_service.controller;
 
 import com.example.order_service.dto.OrderRequest;
 import com.example.order_service.dto.OrderResponse;
+import com.example.order_service.dto.OrderUpdateRequest;
 import com.example.order_service.dto.ProductResponse;
 import com.example.order_service.service.OrderService;
 import jakarta.validation.Valid;
@@ -44,8 +45,8 @@ public class OrderController {
     @PutMapping("/{id}")
     public OrderResponse updateOrder(
             @PathVariable Integer id,
-            @RequestBody Map<String, Object> payload) {
-        return orderService.update(id, payload);
+            @Valid @RequestBody OrderUpdateRequest request) {
+        return orderService.update(id, request);
     }
 
     @DeleteMapping("/{id}")

@@ -5,6 +5,7 @@ import com.example.order_service.dto.OrderItemRequest;
 import com.example.order_service.dto.OrderItemResponse;
 import com.example.order_service.dto.OrderRequest;
 import com.example.order_service.dto.OrderResponse;
+import com.example.order_service.dto.OrderUpdateRequest;
 import com.example.order_service.dto.ProductResponse;
 import com.example.order_service.entity.OrderItem;
 import com.example.order_service.entity.PurchaseOrder;
@@ -197,18 +198,15 @@ public class OrderService {
         return toResponse(saved);
     }
 
-    public OrderResponse update(Integer id, Map<String, Object> payload) {
+    public OrderResponse update(Integer id, OrderUpdateRequest request) {
         PurchaseOrder order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng: " + id));
 
-        if (payload.containsKey("supplierName")) order.setSupplierName(String.valueOf(payload.get("supplierName")));
-        if (payload.containsKey("productId")) order.setProductId(((Number) payload.get("productId")).intValue());
-        if (payload.containsKey("quantity")) order.setQuantity(((Number) payload.get("quantity")).intValue());
-        if (payload.containsKey("unitPrice")) order.setUnitPrice(((Number) payload.get("unitPrice")).intValue());
-        if (payload.containsKey("status")) order.setStatus(String.valueOf(payload.get("status")));
-
-        if (order.getQuantity() != null && order.getUnitPrice() != null) {
-            order.setTotalAmount(order.getQuantity() * order.getUnitPrice());
+        if (request.supplierName() != null && !request.supplierName().isBlank()) {
+            order.setSupplierName(request.supplierName().trim());
+        }
+        if (request.status() != null && !request.status().isBlank()) {
+            order.setStatus(request.status().trim());
         }
         return toResponse(orderRepository.save(order));
     }
