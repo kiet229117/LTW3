@@ -1,5 +1,6 @@
 package com.example.order_service.controller;
 
+import com.example.order_service.dto.ProductResponse;
 import com.example.order_service.entity.PurchaseOrder;
 import com.example.order_service.service.OrderService;
 import org.springframework.http.ResponseEntity;
@@ -58,8 +59,8 @@ public class OrderController {
     // ==================== NGHIỆP VỤ CƠ BẢN ====================
 
     @GetMapping("/product/{id}")
-    public String getProduct(@PathVariable int id) {
-        return orderService.getProductFromProductService(id);
+    public ProductResponse getProduct(@PathVariable Integer id) {
+        return orderService.getProduct(id);
     }
 
     @GetMapping("/status/{status}")

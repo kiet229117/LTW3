@@ -1,10 +1,13 @@
 package com.example.order_service.service;
 
+import com.example.order_service.client.ProductClient;
+import com.example.order_service.dto.ProductResponse;
 import com.example.order_service.entity.OrderItem;
 import com.example.order_service.entity.PurchaseOrder;
 import com.example.order_service.repository.OrderItemRepository;
 import com.example.order_service.repository.OrderRepository;
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -18,20 +21,23 @@ import java.util.Optional;
 @Service
 public class OrderService {
 
-    private final RestClient productClient;
+    private final ProductClient productClient;
     private final RestClient notificationClient;
     private final RestClient userClient;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final JdbcTemplate jdbcTemplate;
 
-    public OrderService(RestClient.Builder builder,
+    public OrderService(ProductClient productClient,
+                        RestClient.Builder builder,
+                        @Value("${services.notification.url}") String notificationUrl,
+                        @Value("${services.user.url}") String userUrl,
                         OrderRepository orderRepository,
                         OrderItemRepository orderItemRepository,
                         JdbcTemplate jdbcTemplate) {
-        this.productClient = builder.baseUrl("http://localhost:8081").build();
-        this.notificationClient = builder.baseUrl("http://localhost:8085").build();
-        this.userClient = builder.baseUrl("http://localhost:8086").build();
+        this.productClient = productClient;
+        this.notificationClient = builder.baseUrl(notificationUrl).build();
+        this.userClient = builder.baseUrl(userUrl).build();
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.jdbcTemplate = jdbcTemplate;
@@ -79,17 +85,13 @@ public class OrderService {
         String productName = "Sản phẩm #" + productId;
 
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> product = productClient.get()
-                    .uri("/api/products/{id}", productId)
-                    .retrieve()
-                    .body(Map.class);
+            ProductResponse product = productClient.getById(productId);
             if (product != null) {
-                if (!payload.containsKey("unitPrice") && product.get("price") instanceof Number price) {
-                    unitPrice = price.intValue();
+                if (!payload.containsKey("unitPrice") && product.price() != null) {
+                    unitPrice = product.price().intValue();
                 }
-                if (product.get("name") != null) {
-                    productName = String.valueOf(product.get("name"));
+                if (product.name() != null) {
+                    productName = product.name();
                 }
             }
         } catch (Exception ignored) {
@@ -158,11 +160,8 @@ public class OrderService {
         return true;
     }
 
-    public String getProductFromProductService(int id) {
-        return productClient.get()
-                .uri("/api/products/{id}", id)
-                .retrieve()
-                .body(String.class);
+    public ProductResponse getProduct(Integer productId) {
+        return productClient.getById(productId);
     }
 
     public List<PurchaseOrder> getByStatus(String status) {
