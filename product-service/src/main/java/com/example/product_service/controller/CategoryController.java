@@ -1,14 +1,16 @@
 package com.example.product_service.controller;
 
-import com.example.product_service.entity.Category;
+import com.example.product_service.dto.CategoryRequest;
+import com.example.product_service.dto.CategoryResponse;
 import com.example.product_service.service.CategoryService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/categories")
 public class CategoryController {
@@ -20,34 +22,32 @@ public class CategoryController {
     }
 
     @GetMapping
-    public List<Category> getAll() {
+    public List<CategoryResponse> getAll() {
         return service.getAll();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Category> getById(@PathVariable int id) {
-        return service.getById(id)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public CategoryResponse getById(@PathVariable Integer id) {
+        return service.getById(id);
     }
 
     @PostMapping
-    public ResponseEntity<Category> create(@RequestBody Category category) {
-        return ResponseEntity.ok(service.create(category));
+    public ResponseEntity<CategoryResponse> create(@Valid @RequestBody CategoryRequest request) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(service.create(request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Category> update(@PathVariable int id, @RequestBody Category category) {
-        return service.update(id, category)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public CategoryResponse update(
+            @PathVariable Integer id,
+            @Valid @RequestBody CategoryRequest request) {
+        return service.update(id, request);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> delete(@PathVariable int id) {
-        if (!service.delete(id)) {
-            return ResponseEntity.notFound().build();
-        }
+    public ResponseEntity<Map<String, Object>> delete(@PathVariable Integer id) {
+        service.delete(id);
         return ResponseEntity.ok(Map.of("message", "Đã xóa danh mục ID = " + id));
     }
 }

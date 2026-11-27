@@ -1,11 +1,13 @@
 package com.example.product_service.service;
 
+import com.example.product_service.dto.CategoryRequest;
+import com.example.product_service.dto.CategoryResponse;
 import com.example.product_service.entity.Category;
+import com.example.product_service.exception.ResourceNotFoundException;
 import com.example.product_service.repository.CategoryRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Optional;
 
 @Service
 public class CategoryService {
@@ -16,31 +18,46 @@ public class CategoryService {
         this.repository = repository;
     }
 
-    public List<Category> getAll() {
-        return repository.findAll();
+    private CategoryResponse toResponse(Category category) {
+        return new CategoryResponse(
+                category.getId(),
+                category.getName(),
+                category.getDescription()
+        );
     }
 
-    public Optional<Category> getById(int id) {
-        return repository.findById(id);
+    public List<CategoryResponse> getAll() {
+        return repository.findAll().stream()
+                .map(this::toResponse)
+                .toList();
     }
 
-    public Category create(Category category) {
-        return repository.save(category);
+    public CategoryResponse getById(Integer id) {
+        Category category = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy danh mục: " + id));
+        return toResponse(category);
     }
 
-    public Optional<Category> update(int id, Category payload) {
-        return repository.findById(id).map(existing -> {
-            if (payload.getName() != null) existing.setName(payload.getName());
-            if (payload.getDescription() != null) existing.setDescription(payload.getDescription());
-            return repository.save(existing);
-        });
+    public CategoryResponse create(CategoryRequest request) {
+        Category category = new Category(
+                request.name().trim(),
+                request.description() != null ? request.description().trim() : ""
+        );
+        return toResponse(repository.save(category));
     }
 
-    public boolean delete(int id) {
+    public CategoryResponse update(Integer id, CategoryRequest request) {
+        Category existing = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy danh mục: " + id));
+        existing.setName(request.name().trim());
+        existing.setDescription(request.description() != null ? request.description().trim() : "");
+        return toResponse(repository.save(existing));
+    }
+
+    public void delete(Integer id) {
         if (!repository.existsById(id)) {
-            return false;
+            throw new ResourceNotFoundException("Không tìm thấy danh mục: " + id);
         }
         repository.deleteById(id);
-        return true;
     }
 }

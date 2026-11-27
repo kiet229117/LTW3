@@ -1,16 +1,28 @@
 package com.example.order_service.service;
 
+import com.example.order_service.client.ProductClient;
+import com.example.order_service.dto.OrderItemRequest;
+import com.example.order_service.dto.OrderItemResponse;
+import com.example.order_service.dto.OrderRequest;
+import com.example.order_service.dto.OrderResponse;
+import com.example.order_service.dto.OrderUpdateRequest;
+import com.example.order_service.dto.ProductResponse;
 import com.example.order_service.entity.OrderItem;
 import com.example.order_service.entity.PurchaseOrder;
+import com.example.order_service.exception.ResourceNotFoundException;
 import com.example.order_service.repository.OrderItemRepository;
 import com.example.order_service.repository.OrderRepository;
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -18,20 +30,23 @@ import java.util.Optional;
 @Service
 public class OrderService {
 
-    private final RestClient productClient;
+    private final ProductClient productClient;
     private final RestClient notificationClient;
     private final RestClient userClient;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final JdbcTemplate jdbcTemplate;
 
-    public OrderService(RestClient.Builder builder,
+    public OrderService(ProductClient productClient,
+                        RestClient.Builder builder,
+                        @Value("${services.notification.url}") String notificationUrl,
+                        @Value("${services.user.url}") String userUrl,
                         OrderRepository orderRepository,
                         OrderItemRepository orderItemRepository,
                         JdbcTemplate jdbcTemplate) {
-        this.productClient = builder.baseUrl("http://localhost:8081").build();
-        this.notificationClient = builder.baseUrl("http://localhost:8085").build();
-        this.userClient = builder.baseUrl("http://localhost:8086").build();
+        this.productClient = productClient;
+        this.notificationClient = builder.baseUrl(notificationUrl).build();
+        this.userClient = builder.baseUrl(userUrl).build();
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.jdbcTemplate = jdbcTemplate;
@@ -45,82 +60,132 @@ public class OrderService {
                 PurchaseOrder o1 = orderRepository.save(new PurchaseOrder(
                         "PO-2026-101",
                         "Công ty TNHH Thiết bị Số Hoàng Gia",
-                        1, 20, 150000, 3000000, 4,
+                        1, 20, 390000, 7800000, 4,
                         "RECEIVED",
                         LocalDateTime.now().minusDays(2).toString()
                 ));
-                orderItemRepository.save(new OrderItem(1, "Mouse Logitech G102", 20, 150000, o1));
+                orderItemRepository.save(new OrderItem(1, "Mouse Logitech G102 Lightsync", 20, 390000, o1));
 
                 PurchaseOrder o2 = orderRepository.save(new PurchaseOrder(
                         "PO-2026-102",
                         "Nhà phân phối Linh kiện GearVN",
-                        2, 15, 250000, 3750000, 4,
+                        2, 15, 2150000, 32250000, 4,
                         "APPROVED",
                         LocalDateTime.now().minusDays(1).toString()
                 ));
-                orderItemRepository.save(new OrderItem(2, "Keyboard Mechanical Keychron", 15, 250000, o2));
+                orderItemRepository.save(new OrderItem(2, "Keyboard Mechanical Keychron K2 Pro", 15, 2150000, o2));
             }
         } catch (Exception ignored) {
         }
     }
 
-    public List<PurchaseOrder> getAll() {
-        return orderRepository.findAll();
+    private OrderResponse toResponse(PurchaseOrder order) {
+        List<OrderItemResponse> itemResponses = order.getItems() == null
+                ? List.of()
+                : order.getItems().stream()
+                .map(item -> new OrderItemResponse(
+                        item.getId(),
+                        item.getProductId(),
+                        item.getProductName(),
+                        item.getQuantity(),
+                        item.getUnitPrice() != null ? BigDecimal.valueOf(item.getUnitPrice()) : BigDecimal.ZERO,
+                        item.getSubTotal() != null ? BigDecimal.valueOf(item.getSubTotal()) : BigDecimal.ZERO
+                ))
+                .toList();
+
+        return new OrderResponse(
+                order.getId(),
+                order.getOrderCode(),
+                order.getSupplierName(),
+                order.getTotalAmount() != null ? BigDecimal.valueOf(order.getTotalAmount()) : BigDecimal.ZERO,
+                order.getStatus(),
+                order.getCreatedByUserId(),
+                order.getApprovedByUserId(),
+                order.getCreatedAt(),
+                order.getApprovedAt(),
+                order.getReceivedAt(),
+                order.getCancelledAt(),
+                itemResponses
+        );
     }
 
-    public Optional<PurchaseOrder> getById(int id) {
-        return orderRepository.findById(id);
+    public List<OrderResponse> getAll() {
+        return orderRepository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
-    public PurchaseOrder create(Map<String, Object> payload) {
-        int productId = ((Number) payload.getOrDefault("productId", 1)).intValue();
-        int quantity = ((Number) payload.getOrDefault("quantity", 10)).intValue();
-        int unitPrice = ((Number) payload.getOrDefault("unitPrice", 150000)).intValue();
-        String productName = "Sản phẩm #" + productId;
+    public OrderResponse getById(Integer id) {
+        PurchaseOrder order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng: " + id));
+        return toResponse(order);
+    }
 
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> product = productClient.get()
-                    .uri("/api/products/{id}", productId)
-                    .retrieve()
-                    .body(Map.class);
-            if (product != null) {
-                if (!payload.containsKey("unitPrice") && product.get("price") instanceof Number price) {
-                    unitPrice = price.intValue();
-                }
-                if (product.get("name") != null) {
-                    productName = String.valueOf(product.get("name"));
-                }
-            }
-        } catch (Exception ignored) {
-        }
+    @Transactional
+    public OrderResponse createOrder(OrderRequest request) {
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        int totalQuantity = 0;
 
         PurchaseOrder order = new PurchaseOrder();
-        order.setSupplierName((String) payload.getOrDefault("supplierName", "Nhà cung cấp mặc định"));
-        order.setProductId(productId);
-        order.setQuantity(quantity);
-        order.setUnitPrice(unitPrice);
-        order.setTotalAmount(quantity * unitPrice);
-        order.setCreatedByUserId(((Number) payload.getOrDefault("createdByUserId", 4)).intValue());
-        order.setStatus((String) payload.getOrDefault("status", "PENDING"));
+        order.setSupplierName(
+                request.supplierName() != null && !request.supplierName().isBlank()
+                        ? request.supplierName().trim()
+                        : "Nhà cung cấp mặc định"
+        );
+        order.setCreatedByUserId(request.createdByUserId() != null ? request.createdByUserId() : 4);
+        order.setStatus("PENDING");
         order.setCreatedAt(LocalDateTime.now().toString());
-        order.setOrderCode((String) payload.get("orderCode"));
 
+        List<OrderItem> orderItems = new ArrayList<>();
+
+        for (OrderItemRequest itemReq : request.items()) {
+            // Gọi Product Service để kiểm tra sản phẩm và lấy đơn giá
+            ProductResponse product = productClient.getById(itemReq.productId());
+            if (product == null || product.price() == null) {
+                throw new ResourceNotFoundException("Không tìm thấy thông tin sản phẩm: " + itemReq.productId());
+            }
+
+            // Tính thành tiền từng sản phẩm
+            BigDecimal amount = product.price()
+                    .multiply(BigDecimal.valueOf(itemReq.quantity()));
+
+            // Cộng dồn tổng tiền đơn hàng
+            totalAmount = totalAmount.add(amount);
+            totalQuantity += itemReq.quantity();
+
+            OrderItem orderItem = new OrderItem(
+                    product.id(),
+                    product.name(),
+                    itemReq.quantity(),
+                    product.price().intValue(),
+                    order
+            );
+            orderItems.add(orderItem);
+        }
+
+        // Cập nhật thông tin tổng hợp đơn hàng
+        OrderItem firstItem = orderItems.get(0);
+        order.setProductId(firstItem.getProductId());
+        order.setQuantity(totalQuantity);
+        order.setUnitPrice(firstItem.getUnitPrice());
+        order.setTotalAmount(totalAmount.intValue());
+        order.setItems(orderItems);
+
+        // Lưu Order và OrderItem vào CSDL
         PurchaseOrder saved = orderRepository.save(order);
         if (saved.getOrderCode() == null || saved.getOrderCode().isBlank()) {
             saved.setOrderCode("PO-2026-" + saved.getId());
             saved = orderRepository.save(saved);
         }
 
-        OrderItem item = orderItemRepository.save(new OrderItem(productId, productName, quantity, unitPrice, saved));
-        saved.getItems().add(item);
-
+        // Gửi thông báo đến Notification Service (không làm gián đoạn nghiệp vụ nếu service chưa bật)
         try {
             notificationClient.post()
                     .uri("/api/notifications/send")
                     .body(Map.of(
                             "title", "Đơn đặt hàng nhập kho mới " + saved.getOrderCode(),
-                            "content", "Đơn nhập " + saved.getOrderCode() + " (SL: " + quantity + ") đang chờ Quản lý kho phê duyệt.",
+                            "content", "Đơn nhập " + saved.getOrderCode() + " (Tổng SL: " + totalQuantity + ") đang chờ Quản lý kho phê duyệt.",
                             "type", "NEW_ORDER",
                             "referenceId", saved.getOrderCode(),
                             "recipient", "WAREHOUSE_MANAGER"
@@ -130,52 +195,44 @@ public class OrderService {
         } catch (Exception ignored) {
         }
 
-        return saved;
+        return toResponse(saved);
     }
 
-    public Optional<PurchaseOrder> update(int id, Map<String, Object> payload) {
-        Optional<PurchaseOrder> orderOpt = orderRepository.findById(id);
-        if (orderOpt.isEmpty()) {
-            return Optional.empty();
+    public OrderResponse update(Integer id, OrderUpdateRequest request) {
+        PurchaseOrder order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng: " + id));
+
+        if (request.supplierName() != null && !request.supplierName().isBlank()) {
+            order.setSupplierName(request.supplierName().trim());
         }
-
-        PurchaseOrder order = orderOpt.get();
-        if (payload.containsKey("supplierName")) order.setSupplierName(String.valueOf(payload.get("supplierName")));
-        if (payload.containsKey("productId")) order.setProductId(((Number) payload.get("productId")).intValue());
-        if (payload.containsKey("quantity")) order.setQuantity(((Number) payload.get("quantity")).intValue());
-        if (payload.containsKey("unitPrice")) order.setUnitPrice(((Number) payload.get("unitPrice")).intValue());
-        if (payload.containsKey("status")) order.setStatus(String.valueOf(payload.get("status")));
-
-        order.setTotalAmount(order.getQuantity() * order.getUnitPrice());
-        return Optional.of(orderRepository.save(order));
+        if (request.status() != null && !request.status().isBlank()) {
+            order.setStatus(request.status().trim());
+        }
+        return toResponse(orderRepository.save(order));
     }
 
-    public boolean delete(int id) {
+    public void delete(Integer id) {
         if (!orderRepository.existsById(id)) {
-            return false;
+            throw new ResourceNotFoundException("Không tìm thấy đơn hàng: " + id);
         }
         orderRepository.deleteById(id);
-        return true;
     }
 
-    public String getProductFromProductService(int id) {
-        return productClient.get()
-                .uri("/api/products/{id}", id)
-                .retrieve()
-                .body(String.class);
+    public ProductResponse getProduct(Integer productId) {
+        return productClient.getById(productId);
     }
 
-    public List<PurchaseOrder> getByStatus(String status) {
-        return orderRepository.findByStatusIgnoreCase(status);
+    public List<OrderResponse> getByStatus(String status) {
+        return orderRepository.findByStatusIgnoreCase(status)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
-    public ResponseEntity<?> approveOrder(int id, Map<String, Object> payload) {
-        Optional<PurchaseOrder> orderOpt = orderRepository.findById(id);
-        if (orderOpt.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
+    public ResponseEntity<?> approveOrder(Integer id, Map<String, Object> payload) {
+        PurchaseOrder order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng: " + id));
 
-        PurchaseOrder order = orderOpt.get();
         int managerId = payload != null && payload.containsKey("approvedByUserId")
                 ? ((Number) payload.get("approvedByUserId")).intValue()
                 : 1;
@@ -188,7 +245,7 @@ public class OrderService {
                     .body(Map.class);
             if (validation != null && Boolean.FALSE.equals(validation.get("valid"))) {
                 return ResponseEntity.status(403).body(Map.of(
-                        "error", "Nhân viên ID = " + managerId + " không có quyền WAREHOUSE_MANAGER để duyệt đơn"
+                        "message", "Nhân viên ID = " + managerId + " không có quyền WAREHOUSE_MANAGER để duyệt đơn"
                 ));
             }
         } catch (Exception ignored) {
@@ -214,31 +271,28 @@ public class OrderService {
         } catch (Exception ignored) {
         }
 
-        return ResponseEntity.ok(saved);
+        return ResponseEntity.ok(toResponse(saved));
     }
 
-    public Optional<PurchaseOrder> markOrderAsReceived(int id) {
-        return orderRepository.findById(id).map(order -> {
-            order.setStatus("RECEIVED");
-            order.setReceivedAt(LocalDateTime.now().toString());
-            return orderRepository.save(order);
-        });
+    public OrderResponse markOrderAsReceived(Integer id) {
+        PurchaseOrder order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng: " + id));
+        order.setStatus("RECEIVED");
+        order.setReceivedAt(LocalDateTime.now().toString());
+        return toResponse(orderRepository.save(order));
     }
 
-    public ResponseEntity<?> cancelOrder(int id) {
-        Optional<PurchaseOrder> orderOpt = orderRepository.findById(id);
-        if (orderOpt.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
+    public ResponseEntity<?> cancelOrder(Integer id) {
+        PurchaseOrder order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng: " + id));
 
-        PurchaseOrder order = orderOpt.get();
         if ("RECEIVED".equals(order.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Không thể hủy đơn hàng đã nhập kho hoàn tất"));
+            return ResponseEntity.badRequest().body(Map.of("message", "Không thể hủy đơn hàng đã nhập kho hoàn tất"));
         }
 
         order.setStatus("CANCELLED");
         order.setCancelledAt(LocalDateTime.now().toString());
-        return ResponseEntity.ok(orderRepository.save(order));
+        return ResponseEntity.ok(toResponse(orderRepository.save(order)));
     }
 
     public List<OrderItem> getAllOrderItems() {
